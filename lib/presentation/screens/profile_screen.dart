@@ -1,7 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/widgets/error_widget.dart';
 import '../providers/auth_provider.dart';
+import '../providers/dashboard_provider.dart';
 import '../providers/profile_provider.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -11,29 +13,22 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final authState    = ref.watch(authProvider);
-    final userId       = authState is AuthAuthenticated ? (authState as AuthAuthenticated).user.id : 0;
+    final userId       = authState is AuthAuthenticated ? authState.user.id : 0;
 
-    // إذا كان auth لا يزال يتهيأ → loading مؤقت قصير
+    // Show loading while auth resolves
     if (authState is AuthInitial || authState is AuthLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    // إذا لم يكن مسجلاً → لا نعلّق، نعرض رسالة واضحة
-    if (authState is! AuthAuthenticated) {
+    if (userId == 0) {
       return const Scaffold(
-        body: Center(child: Text('يرجى تسجيل الدخول أولاً')),
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
-    // نعرض بيانات الجلسة المحفوظة فوراً بدون انتظار API
-    final authed     = authState as AuthAuthenticated;
-    final cachedUser = authed.user;
-
-    // نحاول تحديث البيانات من API في الخلفية (اختياري)
-    final profileAsync = userId != 0 ? ref.watch(profileProvider(userId)) : null;
-    final user = profileAsync?.valueOrNull ?? cachedUser;
+    final profileAsync = ref.watch(profileProvider(userId));
 
     return Scaffold(
       appBar: AppBar(
@@ -48,7 +43,13 @@ class ProfileScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
+      body: profileAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => AppErrorWidget(
+          message: e.toString().replaceAll('Exception: ', ''),
+          onRetry: () => ref.invalidate(profileProvider(userId)),
+        ),
+        data: (user) => SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
